@@ -30,8 +30,9 @@ class SubmitOrderService(
 ) : SubmitOrderUseCase {
 
 	/**
-	 * This method should ensure that the order to be submitted is processed. It also should ensure that the related
-	 * services like courier or payment services will be notified about the order.
+	 * This function should verify that the order to be submitted could be processed. It also should ensure that the related
+	 * services like courier or payment services will be notified about the order and of course it persists the
+	 * initiated order.
 	 *
 	 * @param orderRequest required information to submit an order
 	 * @return Order initiation response. It would contain payment instructions concerning the selected payment option.
