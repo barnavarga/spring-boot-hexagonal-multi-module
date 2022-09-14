@@ -1,5 +1,7 @@
 package com.example.order.domain.service
 
+import com.example.order.application.port.`in`.OrderCompletion
+import com.example.order.application.port.`in`.CompletionResult
 import com.example.order.application.port.`in`.SubmitOrderUseCase
 import com.example.order.application.port.out.CourierServicePort
 import com.example.order.application.port.out.CustomerDataSourcePort
@@ -12,16 +14,12 @@ import com.example.order.domain.model.CourierInformation
 import com.example.order.domain.model.Customer
 import com.example.order.domain.model.ErrorReason
 import com.example.order.domain.model.Order
-import com.example.order.domain.model.enums.CourierProvider
 import com.example.order.domain.model.enums.OrderStatus
-import com.example.order.domain.model.enums.PaymentMethod
 import com.example.order.domain.model.error.PersistingOrderException
 import com.example.order.domain.model.error.ResourceNotFoundException
 import com.example.order.domain.model.error.ShipmentProviderException
-import com.example.order.domain.util.CustomerId
-import com.example.order.domain.util.OrderId
 import org.springframework.stereotype.Service
-import java.util.UUID
+import java.util.*
 
 @Service
 class SubmitOrderService(
@@ -31,7 +29,14 @@ class SubmitOrderService(
 	private val paymentSolutionPort: PaymentSolutionPort
 ) : SubmitOrderUseCase {
 
-	override fun submit(orderRequest: SubmitOrderUseCase.OrderCompletion): Result<SubmitOrderUseCase.OrderRequestCompletion> {
+	/**
+	 * This method should ensure that the order to be submitted is processed. It also should ensure that the related
+	 * services like courier or payment services will be notified about the order.
+	 *
+	 * @param orderRequest required information to submit an order
+	 * @return Order initiation response. It would contain payment instructions concerning the selected payment option.
+	 */
+	override fun submit(orderRequest: OrderCompletion): Result<CompletionResult> {
 
 		try {
 			val customer: Customer = customerDataSourcePort.fetchCustomerById(orderRequest.customerId).getOrElse {
@@ -100,8 +105,8 @@ class SubmitOrderService(
 				)
 			}
 
-			paymentSolutionPort.initiatePayment(
-				PaymentRequest(
+			val paymentResponse = paymentSolutionPort.initiatePayment(
+				PaymentSolutionPort.PaymentRequest(
 					orderId = order.id, paymentMethod = orderRequest.paymentMethod, customer = customer
 				)
 			).getOrElse {
@@ -112,7 +117,11 @@ class SubmitOrderService(
 				return Result.failure(ShipmentProviderException("Payment request error!", message))
 			}
 
-			return Result.success(SubmitOrderUseCase.OrderRequestCompletion(order.id, ""))
+			return Result.success(
+				CompletionResult(
+					orderId = order.id, paymentInstruction = paymentResponse
+				)
+			)
 		} catch (t: Throwable) {
 			return Result.failure(t)
 		}
@@ -127,8 +136,8 @@ class SubmitOrderService(
 	 * @return the result of the validation
 	 */
 	private fun createShippingRequest(
-		orderRequest: SubmitOrderUseCase.OrderCompletion, customer: Customer
-	): Result<ShippingRequest> {
+		orderRequest: OrderCompletion, customer: Customer
+	): Result<CourierServicePort.ShippingRequest> {
 		val address: Address = if (orderRequest.courierData.usePrimaryAddress) {
 			customer.address
 		} else {
@@ -137,15 +146,9 @@ class SubmitOrderService(
 		}
 
 		return Result.success(
-			ShippingRequest(
+			CourierServicePort.ShippingRequest(
 				courierData = orderRequest.courierData.courier, id = customer.id, address = address
 			)
 		)
 	}
-
-	data class ShippingRequest(
-		val courierData: CourierProvider, val id: CustomerId, val address: Address
-	)
-
-	data class PaymentRequest(val orderId: OrderId, val paymentMethod: PaymentMethod, val customer: Customer)
 }
